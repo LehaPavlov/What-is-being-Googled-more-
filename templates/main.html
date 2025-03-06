@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Greater or Less - Game</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Which is more popular?</h1>
+    <form action="/guess" method="POST">
+        <input type="hidden" name="other" value="{{.Item2.ID}}">
+
+        <button type="submit" name="selected" value="{{.Item1.ID}}">
+            <img src="" alt="{{.Item1.Name}}" width="200">
+            <p>{{.Item1.Name}}</p>
+        </button>
+    </form>
+
+    <form action="/guess" method="POST">
+        <input type="hidden" name="other" value="{{.Item1.ID}}">
+        <button type="submit" name="selected" value="{{.Item2.ID}}">
+            <img src="" alt="{{.Item2.Name}}" width="200">
+            <p>{{.Item2.Name}}</p>
+        </button>
+    </form>
+</body>
+</html>
