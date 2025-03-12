@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -6,21 +7,34 @@
 </head>
 <body>
     <h1>Which is more popular?</h1>
-    <form action="/guess" method="POST">
-        <input type="hidden" name="other" value="{{.Item2.ID}}">
 
-        <button type="submit" name="selected" value="{{.Item1.ID}}">
-            <img src="" alt="{{.Item1.Name}}" width="200">
-            <p>{{.Item1.Name}}</p>
-        </button>
-    </form>
+    {{ if .Error }}
+        <p style="color: red;">{{ .Error }}</p>
+    {{ end }}
 
-    <form action="/guess" method="POST">
-        <input type="hidden" name="other" value="{{.Item1.ID}}">
-        <button type="submit" name="selected" value="{{.Item2.ID}}">
-            <img src="" alt="{{.Item2.Name}}" width="200">
-            <p>{{.Item2.Name}}</p>
-        </button>
-    </form>
+    {{ if .Item1 }}
+        <form method="POST">
+            <input type="hidden" name="left" value="{{.Item1.ID.Hex}}">
+            <input type="hidden" name="right" value="{{.Item2.ID.Hex}}">
+            <button type="submit" name="choose_item1" value="{{.Item1.ID.Hex}}">
+                <input type="hidden" name="form_type" value="item1">
+                <img src="" alt="{{.Item1.ImageURL}}" width="200">
+                <p>{{.Item1.Name}}</p>
+            </button>
+        </form>
+    {{ end }}
+
+    {{ if .Item2 }}
+        <form method="POST">
+            <input type="hidden" name="left" value="{{.Item1.ID.Hex}}">
+            <input type="hidden" name="right" value="{{.Item2.ID.Hex}}">
+            <button type="submit" name="choose_item2" value="{{.Item2.ID.Hex}}">
+                <input type="hidden" name="form_type" value="item2">
+                <img src="" alt="{{.Item2.ImageURL}}" width="200">
+                <p>{{.Item2.Name}}</p>
+            </button>
+        </form>
+    {{ end }}
+
 </body>
 </html>

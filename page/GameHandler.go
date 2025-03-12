@@ -29,3 +29,52 @@ func Game(c *gin.Context) {
 
 	c.HTML(200, "main.html", data)
 }
+
+func Result(c *gin.Context) {
+	formType := c.PostForm("form_type")
+	if formType == "item1" {
+		Item1ID := c.PostForm("left")
+		Item2ID := c.PostForm("right")
+		item1, item2, err := request.NextRoundLeft(c, Item1ID, Item2ID)
+		log.Println(item1)
+		if err != nil {
+			if err.Error() == "Вы проиграли" {
+				c.HTML(200, "main.html", gin.H{
+					"error": "You lost!",
+				})
+				return
+			}
+		}
+		if c.Writer.Status() != 200 {
+			return
+		}
+		c.HTML(200, "main.html", gin.H{
+			"Item1": &item1,
+			"Item2": &item2,
+		})
+	}
+	if formType == "item2" {
+		Item1ID := c.PostForm("left")
+		Item2ID := c.PostForm("right")
+		item1, item2, err := request.NextRoundRight(c, Item1ID, Item2ID)
+		log.Println(item1)
+		log.Println(item2)
+		log.Println(err)
+		if err != nil {
+			if err.Error() == "Вы проиграли!" {
+				c.HTML(200, "main.html", gin.H{
+					"error": "You lost!",
+				})
+				return
+			}
+		}
+
+		if c.Writer.Status() != 200 {
+			return
+		}
+		c.HTML(200, "main.html", gin.H{
+			"Item1": &item1,
+			"Item2": &item2,
+		})
+	}
+}
