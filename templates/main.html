@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -8,11 +7,9 @@
 <body>
     <h1>Which is more popular?</h1>
 
-    {{ if .Error }}
-        <p style="color: red;">{{ .Error }}</p>
-    {{ end }}
-
-    {{ if .Item1 }}
+    {{ if .error }}
+        <p>{{.error}}</p>  <!-- Выводим сообщение об ошибке или проигрыше -->
+    {{ else if and .Item1 .Item2 }}
         <form method="POST">
             <input type="hidden" name="left" value="{{.Item1.ID.Hex}}">
             <input type="hidden" name="right" value="{{.Item2.ID.Hex}}">
@@ -22,9 +19,7 @@
                 <p>{{.Item1.Name}}</p>
             </button>
         </form>
-    {{ end }}
 
-    {{ if .Item2 }}
         <form method="POST">
             <input type="hidden" name="left" value="{{.Item1.ID.Hex}}">
             <input type="hidden" name="right" value="{{.Item2.ID.Hex}}">
@@ -34,7 +29,7 @@
                 <p>{{.Item2.Name}}</p>
             </button>
         </form>
+    {{ else }}
+        <p>Вы проиграли</p>  <!-- Общий случай проигрыша, если нет ошибок и нет Item1 и Item2 -->
     {{ end }}
-
 </body>
-</html>

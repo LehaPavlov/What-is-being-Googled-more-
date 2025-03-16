@@ -20,7 +20,6 @@ var gameCollection *mongo.Collection
 var client *mongo.Client
 var ctx = context.TODO()
 var once sync.Once
-
 var usedItemIDsMu sync.Mutex
 var usedItemIDs = make(map[primitive.ObjectID]bool)
 
@@ -78,118 +77,74 @@ func RandomItem(c *gin.Context) (structurs.Item, error) {
 
 }
 func Replacement(c *gin.Context) (structurs.Item, error) {
-	var item structurs.Item
-
-	for {
-		randomItem, err := RandomItem(c)
-		if err != nil {
-			return structurs.Item{}, err
-		}
-		usedItemIDsMu.Lock()
-		_, alreadyUsed := usedItemIDs[randomItem.ID]
-		if !alreadyUsed {
-			usedItemIDs[randomItem.ID] = true
-			usedItemIDsMu.Unlock()
-			item = randomItem
-			return item, nil
-		}
-		usedItemIDsMu.Unlock()
-		c.HTML(200, "main.html", gin.H{
-			"message": "Вы победили!",
-		})
+	count, err := gameCollection.EstimatedDocumentCount(c, nil)
+	if err != nil {
+		return structurs.Item{}, fmt.Errorf("failed to get document count: %w", err)
 	}
+
+	if count == 0 {
+		return structurs.Item{}, fmt.Errorf("collection is empty")
+	}
+
+	randomIndex := rand.Intn(int(count))
+
+	findOptions := options.FindOne().SetSkip(int64(randomIndex))
+	var item structurs.Item
+	err = gameCollection.FindOne(c, bson.M{}, findOptions).Decode(&item)
+	if err != nil {
+		return structurs.Item{}, fmt.Errorf("failed to find replacement item: %w", err)
+	}
+
+	return item, nil
 }
 
 func NextRoundLeft(c *gin.Context, item1 string, item2 string) (structurs.Item, structurs.Item, error) {
-	var newItem1 structurs.Item
-	var newItem2 structurs.Item
-	ItemID1, err := primitive.ObjectIDFromHex(item1)
-	ItemID2, err := primitive.ObjectIDFromHex(item2)
-	log.Println(item1)
-	if err != nil {
-		log.Println("Ошибка при преобразовании ObjectID из hex:", err)
-	}
-
-	filter := bson.M{"_id": ItemID1}
-	err = gameCollection.FindOne(c, filter).Decode(&newItem1)
-	if err != nil {
-		log.Println(err)
-		if err == mongo.ErrNoDocuments {
-			c.AbortWithStatusJSON(404, gin.H{"error": "Item1 not found"})
-		} else {
-			c.AbortWithError(500, fmt.Errorf("failed to find item1: %w", err))
-		}
-		return structurs.Item{}, structurs.Item{}, fmt.Errorf("invalid item1 ID: %w", err)
-	}
-
-	filter = bson.M{"_id": ItemID2}
-	err = gameCollection.FindOne(c, filter).Decode(&newItem2)
-	if err != nil {
-		log.Println(err)
-		if err == mongo.ErrNoDocuments {
-			c.AbortWithStatusJSON(404, gin.H{"error": "Item2 not found"})
-		} else {
-			c.AbortWithError(500, fmt.Errorf("failed to find item2: %w", err))
-		}
-		return structurs.Item{}, structurs.Item{}, fmt.Errorf("invalid item2 ID: %w", err)
-	}
-
-	if newItem1.Popularity > newItem2.Popularity {
-		replacementItem, err := Replacement(c)
-		if err != nil {
-			log.Println("Ошибка при получении Replacement:", err)
-			c.AbortWithError(500, fmt.Errorf("failed to get replacement item: %w", err))
-			return structurs.Item{}, structurs.Item{}, err
-		}
-		return newItem1, replacementItem, nil
-	} else {
-		return structurs.Item{}, structurs.Item{}, fmt.Errorf("Вы проиграли!")
-	}
+	return nextRound(c, item1, item2, true)
 }
 
 func NextRoundRight(c *gin.Context, item1 string, item2 string) (structurs.Item, structurs.Item, error) {
+	return nextRound(c, item1, item2, false)
+}
+
+func nextRound(c *gin.Context, item1 string, item2 string, left bool) (structurs.Item, structurs.Item, error) {
 	var newItem1 structurs.Item
 	var newItem2 structurs.Item
 	ItemID1, err := primitive.ObjectIDFromHex(item1)
 	ItemID2, err := primitive.ObjectIDFromHex(item2)
-	log.Println(item1)
 	if err != nil {
 		log.Println("Ошибка при преобразовании ObjectID из hex:", err)
+		return structurs.Item{}, structurs.Item{}, fmt.Errorf("Ошибка при преобразовании ObjectID из hex: %w", err)
 	}
 
 	filter := bson.M{"_id": ItemID1}
 	err = gameCollection.FindOne(c, filter).Decode(&newItem1)
 	if err != nil {
 		log.Println(err)
-		if err == mongo.ErrNoDocuments {
-			c.AbortWithStatusJSON(404, gin.H{"error": "Item1 not found"})
-		} else {
-			c.AbortWithError(500, fmt.Errorf("failed to find item1: %w", err))
-		}
-		return structurs.Item{}, structurs.Item{}, fmt.Errorf("invalid item1 ID: %w", err)
+		return structurs.Item{}, structurs.Item{}, fmt.Errorf("failed to find item1: %w", err)
 	}
 
 	filter = bson.M{"_id": ItemID2}
 	err = gameCollection.FindOne(c, filter).Decode(&newItem2)
 	if err != nil {
 		log.Println(err)
-		if err == mongo.ErrNoDocuments {
-			c.AbortWithStatusJSON(404, gin.H{"error": "Item2 not found"})
-		} else {
-			c.AbortWithError(500, fmt.Errorf("failed to find item2: %w", err))
-		}
-		return structurs.Item{}, structurs.Item{}, fmt.Errorf("invalid item2 ID: %w", err)
+		return structurs.Item{}, structurs.Item{}, fmt.Errorf("failed to find item2: %w", err)
 	}
 
-	if newItem2.Popularity > newItem1.Popularity {
-		replacementItem, err := Replacement(c)
+	//Determine which item has higher popularity
+	var replacementItem structurs.Item
+	if (left && newItem1.Popularity > newItem2.Popularity) || (!left && newItem2.Popularity > newItem1.Popularity) {
+		replacementItem, err = Replacement(c)
 		if err != nil {
 			log.Println("Ошибка при получении Replacement:", err)
-			c.AbortWithError(500, fmt.Errorf("failed to get replacement item: %w", err))
-			return structurs.Item{}, structurs.Item{}, err
+			return structurs.Item{}, structurs.Item{}, fmt.Errorf("failed to get replacement item: %w", err)
 		}
-		return replacementItem, newItem2, nil
+		if left {
+			return newItem1, replacementItem, nil
+		} else {
+			return newItem2, replacementItem, nil
+		}
+
 	} else {
-		return structurs.Item{}, structurs.Item{}, fmt.Errorf("Вы проиграли!")
+		return structurs.Item{}, structurs.Item{}, nil
 	}
 }
