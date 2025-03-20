@@ -6,6 +6,7 @@ import (
 	"log"
 	"main/structurs"
 	"math/rand"
+	"net/http"
 	"sync"
 	"time"
 
@@ -41,7 +42,14 @@ func init() {
 		rand.Seed(time.Now().UnixNano())
 	})
 }
+func Reset(c *gin.Context) {
+	usedItemIDsMu.Lock()
+	defer usedItemIDsMu.Unlock()
+	usedItemIDs = make(map[primitive.ObjectID]bool)
+	log.Println("Used items have been reset.")
+	c.Redirect(http.StatusFound, "/")
 
+}
 func RandomItem(c *gin.Context) (structurs.Item, error) {
 	count, err := gameCollection.CountDocuments(ctx, bson.M{})
 	if err != nil {
@@ -52,29 +60,45 @@ func RandomItem(c *gin.Context) (structurs.Item, error) {
 		return structurs.Item{}, fmt.Errorf("no items found in the database")
 	}
 
-	cursor, err := gameCollection.Aggregate(ctx, []bson.M{
-		{"$sample": bson.M{"size": 1}},
-	})
+	usedItemIDsMu.Lock()
+	availableItemIDs := make([]primitive.ObjectID, 0, count-int64(len(usedItemIDs)))
+	for i := int64(0); i < count; i++ { // Итерируемся с типом int64
+		var item structurs.Item
+		findOptions := options.FindOne().SetSkip(i)                            //Перебираем все элементы
+		err = gameCollection.FindOne(ctx, bson.M{}, findOptions).Decode(&item) // Забираем каждый элемент
+		if err != nil {
+			usedItemIDsMu.Unlock()
+			return structurs.Item{}, err
+		}
+		if _, used := usedItemIDs[item.ID]; !used {
+			availableItemIDs = append(availableItemIDs, item.ID) // Добавляем в список, если еще не использовали
+		}
+	}
+	// Если все элементы использованы, возвращаем ошибку
+	if len(availableItemIDs) == 0 {
+		usedItemIDsMu.Unlock()
+		return structurs.Item{}, fmt.Errorf("no more items available")
+	}
+	// Выбираем случайный ID из доступных
+	randomIndex := rand.Intn(len(availableItemIDs))
+	selectedItemID := availableItemIDs[randomIndex]
+
+	// Получаем элемент по выбранному ID
+	var selectedItem structurs.Item
+	err = gameCollection.FindOne(ctx, bson.M{"_id": selectedItemID}).Decode(&selectedItem)
 	if err != nil {
-		return structurs.Item{}, fmt.Errorf("failed to aggregate: %w", err)
+		usedItemIDsMu.Unlock()
+		return structurs.Item{}, fmt.Errorf("failed to find selected item: %w", err)
 	}
-	defer func() {
-		if cursor != nil {
-			cursor.Close(ctx)
-		}
-	}()
+	usedItemIDs[selectedItemID] = true // Помечаем как использованный
+	usedItemIDsMu.Unlock()
+	return selectedItem, nil
+}
 
-	var item structurs.Item
-	if cursor.Next(ctx) {
-		if err := cursor.Decode(&item); err != nil {
-			return structurs.Item{}, fmt.Errorf("failed to decode item: %w", err)
-		}
-		return item, nil
-
-	}
-
-	return structurs.Item{}, fmt.Errorf("no item found after random selection")
-
+func ResetUsedItems() {
+	usedItemIDsMu.Lock()
+	usedItemIDs = make(map[primitive.ObjectID]bool)
+	usedItemIDsMu.Unlock()
 }
 func Replacement(c *gin.Context) (structurs.Item, error) {
 	count, err := gameCollection.EstimatedDocumentCount(c, nil)
@@ -85,17 +109,20 @@ func Replacement(c *gin.Context) (structurs.Item, error) {
 	if count == 0 {
 		return structurs.Item{}, fmt.Errorf("collection is empty")
 	}
-
-	randomIndex := rand.Intn(int(count))
-
-	findOptions := options.FindOne().SetSkip(int64(randomIndex))
-	var item structurs.Item
-	err = gameCollection.FindOne(c, bson.M{}, findOptions).Decode(&item)
-	if err != nil {
-		return structurs.Item{}, fmt.Errorf("failed to find replacement item: %w", err)
+	usedItemIDsMu.Lock()
+	defer usedItemIDsMu.Unlock()
+	maxAttempts := 100
+	for attempts := 0; attempts < maxAttempts; attempts++ {
+		randomIndex := rand.Intn(int(count))
+		findOptions := options.FindOne().SetSkip(int64(randomIndex))
+		var item structurs.Item
+		err = gameCollection.FindOne(c, bson.M{}, findOptions).Decode(&item)
+		if _, used := usedItemIDs[item.ID]; !used {
+			usedItemIDs[item.ID] = true
+			return item, nil
+		}
 	}
-
-	return item, nil
+	return structurs.Item{}, fmt.Errorf("Все данные были использованы из бд")
 }
 
 func NextRoundLeft(c *gin.Context, item1 string, item2 string) (structurs.Item, structurs.Item, error) {
@@ -130,21 +157,21 @@ func nextRound(c *gin.Context, item1 string, item2 string, left bool) (structurs
 		return structurs.Item{}, structurs.Item{}, fmt.Errorf("failed to find item2: %w", err)
 	}
 
-	//Determine which item has higher popularity
 	var replacementItem structurs.Item
 	if (left && newItem1.Popularity > newItem2.Popularity) || (!left && newItem2.Popularity > newItem1.Popularity) {
-		replacementItem, err = Replacement(c)
-		if err != nil {
-			log.Println("Ошибка при получении Replacement:", err)
-			return structurs.Item{}, structurs.Item{}, fmt.Errorf("failed to get replacement item: %w", err)
-		}
-		if left {
-			return newItem1, replacementItem, nil
-		} else {
-			return newItem2, replacementItem, nil
-		}
+		for {
+			replacementItem, err = Replacement(c)
+			if replacementItem.ID != newItem1.ID && replacementItem.ID != newItem2.ID {
+				if left {
+					return newItem1, replacementItem, nil
+				} else {
+					return newItem2, replacementItem, nil
+				}
 
-	} else {
-		return structurs.Item{}, structurs.Item{}, nil
+			} else {
+				return structurs.Item{}, structurs.Item{}, nil
+			}
+		}
 	}
+	return structurs.Item{}, structurs.Item{}, nil
 }

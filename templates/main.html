@@ -8,8 +8,14 @@
     <h1>Which is more popular?</h1>
 
     {{ if .error }}
-        <p>{{.error}}</p>  <!-- Выводим сообщение об ошибке или проигрыше -->
+        <p>{{.error}}</p>
+        <form method="POST" action="/reset">
+            <button type="submit">Начать сначала</button>
+        </form>
     {{ else if and .Item1 .Item2 }}
+    {{ if eq .Item1.Name .Item2.Name }}
+        <p>Вы выиграли!</p>
+    {{else}}
         <form method="POST">
             <input type="hidden" name="left" value="{{.Item1.ID.Hex}}">
             <input type="hidden" name="right" value="{{.Item2.ID.Hex}}">
@@ -29,7 +35,12 @@
                 <p>{{.Item2.Name}}</p>
             </button>
         </form>
+    {{end}}
     {{ else }}
-        <p>Вы проиграли</p>  <!-- Общий случай проигрыша, если нет ошибок и нет Item1 и Item2 -->
+        <p>Вы проиграли</p>
+        <form method="GET" action="/">
+            <button type="submit">Начать сначала</button>
+        </form>
     {{ end }}
 </body>
+</html>

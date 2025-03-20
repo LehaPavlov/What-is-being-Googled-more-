@@ -4,11 +4,19 @@ import (
 	"log"
 	"main/request"
 	"main/structurs"
+	"sync"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+var usedItemIDs = make(map[primitive.ObjectID]bool)
+var usedItemIDsMu sync.Mutex
+
 func Game(c *gin.Context) {
+	usedItemIDsMu.Lock()
+	usedItemIDs = make(map[primitive.ObjectID]bool)
+	usedItemIDsMu.Unlock()
 	item1, err := request.RandomItem(c)
 	if err != nil {
 		log.Println(err)
@@ -62,9 +70,14 @@ func Result(c *gin.Context) {
 	}
 
 	if item1.ID.IsZero() && item2.ID.IsZero() {
-		c.HTML(200, "main.html", gin.H{"error": "Вы проиграли!"})
+		c.HTML(200, "main.html", gin.H{"error": "Вы проиграли"})
 		return
 	}
+	if item1.ID.IsZero() || item2.ID.IsZero() {
+		c.HTML(200, "main.html", gin.H{"error": "Вы выиграли!"})
+		return
+	}
+	log.Println("Айтем 1 ", item1, "Айтем 2: ", item2)
 	data := gin.H{
 		"Item1": &item1,
 		"Item2": &item2,
